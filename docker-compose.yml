@@ -1,0 +1,23 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: sqlite:////data/jobposting.db
+      CORS_ORIGINS: "*"
+      API_KEY: ${API_KEY:-}
+      REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}
+      ENABLE_SCHEDULER: "true"
+      ARCHIVE_MISSING_JOBS: "true"
+      LOG_JSON: "true"
+      SERVE_FRONTEND: "true"
+      FRONTEND_DIST: /app/frontend/dist
+      ALLOW_PRIVATE_NETWORKS: "false"
+    volumes:
+      - jobposting-data:/data
+    restart: unless-stopped
+
+volumes:
+  jobposting-data:

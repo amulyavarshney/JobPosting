@@ -1,0 +1,1 @@
+"""JobPosting backend application."""
