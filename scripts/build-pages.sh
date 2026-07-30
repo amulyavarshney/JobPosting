@@ -13,9 +13,12 @@ rm -rf "${OUT}"
 mkdir -p "${OUT}"
 
 cd "${ROOT}/frontend"
-if [[ ! -d node_modules/.bin/tsc ]]; then
-  npm ci || npm install
+
+# Always install in CI; locally reuse node_modules when present.
+if [[ "${CI:-}" == "true" || ! -x node_modules/.bin/tsc ]]; then
+  npm ci --registry https://registry.npmjs.org/
 fi
+
 VITE_DEMO_MODE=true VITE_BASE_PATH="${BASE_PATH}/" npm run build
 
 cp -R dist/. "${OUT}/"

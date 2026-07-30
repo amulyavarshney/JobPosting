@@ -46,10 +46,14 @@ jobs:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --registry https://registry.npmjs.org/
       - name: Build static site
         env:
           # Must match GitHub Pages project URL path (repo name), e.g. /JobPosting
           BASE_PATH: /${{ github.event.repository.name }}
+          CI: "true"
         run: |
           chmod +x scripts/build-pages.sh
           ./scripts/build-pages.sh
