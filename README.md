@@ -2,7 +2,7 @@
 
 Scrape career sites, normalize job postings, and generate multi-channel marketing copy (LinkedIn, WhatsApp, YouTube Shorts, Instagram Reels, and more). Polish with your existing AI subscriptions (Claude, ChatGPT, Gemini) — **no LLM API keys required**.
 
-**Live demo (browser-only):** [https://amulyavarshney.github.io/job-posting/](https://amulyavarshney.github.io/job-posting/)
+**Live demo (browser-only):** [https://amulyavarshney.github.io/JobPosting/](https://amulyavarshney.github.io/JobPosting/)
 
 ## Features
 
@@ -58,16 +58,17 @@ Local Pages build:
 
 ```bash
 chmod +x scripts/build-pages.sh
-./scripts/build-pages.sh
+BASE_PATH=/JobPosting ./scripts/build-pages.sh
 # output in _site/
 ```
 
-One-time GitHub setup:
+One-time GitHub setup (required or the site stays 404):
 
-1. Repo **Settings → Pages → Source: GitHub Actions**
-2. Ensure the repository public path matches `/job-posting` (rename the GitHub repo to `job-posting` if needed)
+1. Open [repo Settings → Pages](https://github.com/amulyavarshney/JobPosting/settings/pages)
+2. Set **Source** to **GitHub Actions**
+3. Re-run **Deploy GitHub Pages** from the Actions tab (or push to `main`)
 
-Optional: set Actions variable `API_BASE_URL` later if you host the API elsewhere and wire a non-demo build.
+Public URL path matches the repo name: `/JobPosting/`.
 
 ## Subscription AI workflow
 

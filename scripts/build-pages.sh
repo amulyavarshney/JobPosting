@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${ROOT}/_site"
-BASE_PATH="${BASE_PATH:-/job-posting}"
+BASE_PATH="${BASE_PATH:-/JobPosting}"
 # Normalize base path
 BASE_PATH="/${BASE_PATH#/}"
 BASE_PATH="${BASE_PATH%/}"
@@ -19,6 +19,8 @@ fi
 VITE_DEMO_MODE=true VITE_BASE_PATH="${BASE_PATH}/" npm run build
 
 cp -R dist/. "${OUT}/"
+# SPA fallback for deep links on GitHub Pages (no server rewrite)
+cp "${OUT}/index.html" "${OUT}/404.html"
 touch "${OUT}/.nojekyll"
 
 echo "Built ${OUT} (base=${BASE_PATH}/, demoMode=true)"

@@ -48,8 +48,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Build static site
         env:
-          # Public site: https://amulyavarshney.github.io/job-posting/
-          BASE_PATH: /job-posting
+          # Must match GitHub Pages project URL path (repo name), e.g. /JobPosting
+          BASE_PATH: /${{ github.event.repository.name }}
         run: |
           chmod +x scripts/build-pages.sh
           ./scripts/build-pages.sh
