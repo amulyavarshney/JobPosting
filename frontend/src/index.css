@@ -124,6 +124,13 @@ a {
   border-radius: var(--radius);
   padding: 0.9rem 1rem;
   box-shadow: var(--shadow);
+  display: block;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+a.stat:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
 }
 
 .stat .label {

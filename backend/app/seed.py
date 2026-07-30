@@ -134,13 +134,16 @@ We're looking for a talented {{ job.title }} to join {{ job.company }}.
 def seed_templates(db) -> None:
     from app.models import Template
 
-    existing = db.query(Template).count()
-    if existing > 0:
-        return
-
+    existing_channels = {t.channel for t in db.query(Template).all()}
+    added = False
     for tpl in DEFAULT_TEMPLATES:
+        if tpl["channel"] in existing_channels:
+            continue
         db.add(Template(**tpl))
-    db.commit()
+        existing_channels.add(tpl["channel"])
+        added = True
+    if added or not existing_channels:
+        db.commit()
 
 
 def seed_brand_profile(db) -> None:

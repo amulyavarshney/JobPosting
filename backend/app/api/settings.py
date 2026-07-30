@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.config import get_settings
-from app.schemas import SettingsRead, SettingsUpdate
+from app.schemas import SettingsRead
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -26,18 +26,3 @@ def get_settings_view():
         scheduler_enabled=settings.enable_scheduler,
         archive_missing_jobs=settings.archive_missing_jobs,
     )
-
-
-@router.patch("", response_model=SettingsRead)
-def update_settings(payload: SettingsUpdate):
-    """Runtime overlay for optional LLM settings (prefer .env for production)."""
-    settings = get_settings()
-    if payload.ollama_base_url is not None:
-        settings.ollama_base_url = payload.ollama_base_url or None
-    if payload.openai_api_key is not None:
-        settings.openai_api_key = payload.openai_api_key or None
-    if payload.anthropic_api_key is not None:
-        settings.anthropic_api_key = payload.anthropic_api_key or None
-    if payload.gemini_api_key is not None:
-        settings.gemini_api_key = payload.gemini_api_key or None
-    return get_settings_view()

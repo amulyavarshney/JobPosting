@@ -120,10 +120,27 @@ def list_source_runs(source_id: int, limit: int = 20, db: Session = Depends(get_
     source = db.query(Source).filter(Source.id == source_id).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
-    return (
+    runs = (
         db.query(ScrapeRun)
         .filter(ScrapeRun.source_id == source_id)
         .order_by(ScrapeRun.started_at.desc())
         .limit(min(limit, 100))
         .all()
     )
+    return [
+        ScrapeRunRead(
+            id=r.id,
+            source_id=r.source_id,
+            source_name=source.name,
+            status=r.status,
+            jobs_found=r.jobs_found,
+            jobs_created=r.jobs_created,
+            jobs_updated=r.jobs_updated,
+            jobs_archived=r.jobs_archived,
+            error_message=r.error_message,
+            duration_ms=r.duration_ms,
+            started_at=r.started_at,
+            finished_at=r.finished_at,
+        )
+        for r in runs
+    ]

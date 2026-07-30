@@ -1,20 +1,20 @@
 # JobPosting
 
-Production-oriented pipeline to **scrape career sites**, normalize job postings, and generate multi-channel marketing copy (LinkedIn, WhatsApp, YouTube Shorts, Instagram Reels, and more) — then polish with **your existing AI subscriptions** (Claude, ChatGPT, Gemini). No LLM API keys required.
+Scrape career sites, normalize job postings, and generate multi-channel marketing copy (LinkedIn, WhatsApp, YouTube Shorts, Instagram Reels, and more). Polish with your existing AI subscriptions (Claude, ChatGPT, Gemini) — **no LLM API keys required**.
+
+**Live demo (browser-only):** [https://amulyavarshney.github.io/job-posting/](https://amulyavarshney.github.io/job-posting/)
 
 ## Features
 
-- **Sources** — Greenhouse, Lever, Ashby, Workday, custom URLs; enable/disable; scrape-all
-- **Scheduled scrapes** — per-source interval with background scheduler and scrape run history
-- **Job lifecycle** — active / archived / closed; auto-archive roles missing from the latest board scrape; content-change detection
-- **Jobs inbox** — search, filters, pagination, bulk select → generate
-- **Templates** — editable Jinja2 channels + polish instructions + live preview
-- **Brand voice** — org tone, banned words, hashtag/CTA policy injected into AI prompt packs
-- **Generate** — local Jinja drafts, prompt-pack copy/import, revision history, export `.txt` / `.md`
-- **Dashboard** — pipeline metrics and recent activity
-- **Production ops** — Docker, health live/ready, structured logging, rate limits, optional API key, SPA served from FastAPI, CI
+- **Sources** — Greenhouse, Lever, Ashby, Workday, custom URLs; scrape-all; per-source history and auto-scrape intervals
+- **Jobs** — search, filters (including “changed” / needs fill), pagination, bulk select → generate
+- **Templates** — editable Jinja2 channels with polish instructions and live preview
+- **Brand voice** — tone and CTA rules injected into AI prompt packs
+- **Generate** — local drafts, copy prompt / import result, revision history, export `.txt` / `.md`
+- **Dashboard** — metrics, pending drafts queue, recent scrapes
+- **Ops** — Docker, health checks, rate limits, optional API key, CI + GitHub Pages deploy
 
-## Quick start (local)
+## Quick start (full app)
 
 ```bash
 python3 -m venv .venv
@@ -22,11 +22,11 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 
-# API
+# Terminal 1 — API
 cd backend
 ../.venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-# UI (dev)
+# Terminal 2 — UI
 cd frontend
 npm install
 npm run dev
@@ -35,78 +35,69 @@ npm run dev
 - UI: http://localhost:5173  
 - API docs: http://127.0.0.1:8000/docs  
 
-### Production-style single process
+### Production-style (API serves the built SPA)
 
 ```bash
 cd frontend && npm run build && cd ..
 cd backend
 ENVIRONMENT=production SERVE_FRONTEND=true \
-  uvicorn app.main:app --host 0.0.0.0 --port 8000
+  ../.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
-
-Open http://127.0.0.1:8000
 
 ### Docker
 
 ```bash
-export API_KEY=change-me   # optional
 docker compose up --build
 ```
 
+## GitHub Pages demo
+
+GitHub Pages cannot run FastAPI. On push to `main`, Actions builds a **static demo** (localStorage-backed) and deploys from **this repository** via GitHub Pages (not the `amulyavarshney.github.io` user repo).
+
+Local Pages build:
+
+```bash
+chmod +x scripts/build-pages.sh
+./scripts/build-pages.sh
+# output in _site/
+```
+
+One-time GitHub setup:
+
+1. Repo **Settings → Pages → Source: GitHub Actions**
+2. Ensure the repository public path matches `/job-posting` (rename the GitHub repo to `job-posting` if needed)
+
+Optional: set Actions variable `API_BASE_URL` later if you host the API elsewhere and wire a non-demo build.
+
 ## Subscription AI workflow
 
-1. Generate drafts in the app (local Jinja)
+1. Generate drafts (local Jinja / demo templates)
 2. **Copy AI prompt** (includes brand voice + custom requirement)
 3. Polish in Claude / ChatGPT / Gemini
-4. **Import result** back into the draft
+4. **Import result** into the draft
 5. Export and post manually
 
-Agent skills: `.claude/skills/jobposting/`  
-Instruction packs: `skills/chatgpt/`, `skills/gemini/`, `skills/openapi-actions.yaml`
+Instruction packs: `skills/chatgpt/`, `skills/gemini/`, `skills/openapi-actions.yaml`  
+Claude skill: `.claude/skills/jobposting/`
 
 ## Configuration
 
-See [`.env.example`](.env.example). Important production knobs:
+See [`.env.example`](.env.example).
 
 | Variable | Purpose |
 |----------|---------|
 | `ENVIRONMENT` | `development` / `production` |
 | `API_KEY` + `REQUIRE_API_KEY` | Protect write routes |
 | `ENABLE_SCHEDULER` | Background auto-scrape |
-| `ARCHIVE_MISSING_JOBS` | Mark jobs missing from board as archived |
-| `RATE_LIMIT_*` | Per-IP API / scrape limits |
+| `ARCHIVE_MISSING_JOBS` | Archive roles missing from board |
 | `CORS_ORIGINS` | Browser origins |
-| `LOG_JSON` | Structured logs |
+| `SERVE_FRONTEND` | Serve `frontend/dist` from FastAPI |
 
-## API surface (high level)
-
-| Area | Endpoints |
-|------|-----------|
-| Health | `GET /api/health`, `/api/health/live`, `/api/health/ready` |
-| Sources | CRUD, `POST /api/sources/{id}/scrape`, `POST /api/sources/scrape-all`, runs |
-| Jobs | Paginated list + filters, CRUD |
-| Templates | CRUD + `POST /api/templates/{id}/preview` |
-| Drafts | generate, generate-bulk, prompt-pack, import, export, revisions |
-| Brand | `GET/PATCH /api/brand` |
-| Analytics | `GET /api/analytics/dashboard` |
-
-## Tests & lint
+## Tests
 
 ```bash
-cd backend
-../.venv/bin/pytest -q
-../.venv/bin/ruff check app tests
-cd ../frontend && npm run build
-```
-
-## Architecture
-
-```
-Sources → Scrapers (ATS JSON / JSON-LD / HTML)
-       → Jobs DB (dedupe, freshness, archive)
-       → Jinja templates → Drafts
-       → Prompt packs → External AI (subscriptions)
-       → Import / revise → Export
+cd backend && ../.venv/bin/pytest -q
+cd frontend && npm run build
 ```
 
 ## License

@@ -1,3 +1,5 @@
+import { demoApi, isDemoMode } from "./demo/store";
+
 const BASE = "/api";
 
 function getApiKey(): string | null {
@@ -131,6 +133,7 @@ export interface Settings {
 export interface ScrapeRun {
   id: number;
   source_id: number;
+  source_name?: string | null;
   status: string;
   jobs_found: number;
   jobs_created: number;
@@ -139,6 +142,16 @@ export interface ScrapeRun {
   error_message: string | null;
   duration_ms: number;
   started_at: string;
+}
+
+export interface DraftQueueItem {
+  id: number;
+  job_id: number;
+  channel: string;
+  status: string;
+  job_title: string;
+  company: string;
+  updated_at: string;
 }
 
 export interface DashboardStats {
@@ -150,11 +163,13 @@ export interface DashboardStats {
   jobs_changed: number;
   drafts_total: number;
   drafts_reviewed: number;
+  drafts_pending: number;
   scrape_runs_24h: number;
   scrape_failures_24h: number;
   templates_total: number;
   recent_jobs: Job[];
   recent_runs: ScrapeRun[];
+  pending_drafts: DraftQueueItem[];
 }
 
 export interface ScrapeResult {
@@ -169,7 +184,7 @@ export interface ScrapeResult {
   duration_ms: number;
 }
 
-export const api = {
+const liveApi = {
   dashboard: () => request<DashboardStats>("/analytics/dashboard"),
 
   listSources: () => request<Source[]>("/sources"),
@@ -211,17 +226,22 @@ export const api = {
       body: JSON.stringify({ job_id, body }),
     }),
 
-  listDrafts: (jobId?: number) =>
-    request<Draft[]>(jobId ? `/drafts?job_id=${jobId}` : "/drafts"),
-  generateDrafts: (job_id: number, template_ids: number[]) =>
+  listDrafts: (jobId?: number, status?: string) => {
+    const qs = new URLSearchParams();
+    if (jobId !== undefined) qs.set("job_id", String(jobId));
+    if (status) qs.set("status", status);
+    const q = qs.toString();
+    return request<Draft[]>(`/drafts${q ? `?${q}` : ""}`);
+  },
+  generateDrafts: (job_id: number, template_ids: number[], overwrite_reviewed = false) =>
     request<Draft[]>("/drafts/generate", {
       method: "POST",
-      body: JSON.stringify({ job_id, template_ids }),
+      body: JSON.stringify({ job_id, template_ids, overwrite_reviewed }),
     }),
-  generateBulk: (job_ids: number[], template_ids: number[]) =>
+  generateBulk: (job_ids: number[], template_ids: number[], overwrite_reviewed = false) =>
     request<{ drafts: Draft[]; jobs_processed: number }>("/drafts/generate-bulk", {
       method: "POST",
-      body: JSON.stringify({ job_ids, template_ids }),
+      body: JSON.stringify({ job_ids, template_ids, overwrite_reviewed }),
     }),
   updateDraft: (id: number, data: { content?: string; status?: string }) =>
     request<Draft>(`/drafts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
@@ -250,10 +270,7 @@ export const api = {
     request<BrandProfile>("/brand", { method: "PATCH", body: JSON.stringify(data) }),
 
   getSettings: () => request<Settings>("/settings"),
-  updateSettings: (data: {
-    ollama_base_url?: string | null;
-    openai_api_key?: string;
-    anthropic_api_key?: string;
-    gemini_api_key?: string;
-  }) => request<Settings>("/settings", { method: "PATCH", body: JSON.stringify(data) }),
 };
+
+export const api = isDemoMode() ? demoApi : liveApi;
+export { isDemoMode };

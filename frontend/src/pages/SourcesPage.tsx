@@ -1,13 +1,16 @@
-import { FormEvent, useEffect, useState } from "react";
-import { api, Source } from "../api";
+import { FormEvent, Fragment, useEffect, useState } from "react";
+import { api, ScrapeRun, Source } from "../api";
 
 const KINDS = ["greenhouse", "lever", "ashby", "workday", "custom"];
 
 export default function SourcesPage() {
   const [sources, setSources] = useState<Source[]>([]);
+  const [intervals, setIntervals] = useState<Record<number, number>>({});
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [historyId, setHistoryId] = useState<number | null>(null);
+  const [runs, setRuns] = useState<ScrapeRun[]>([]);
   const [form, setForm] = useState({
     name: "",
     kind: "greenhouse",
@@ -18,7 +21,14 @@ export default function SourcesPage() {
   const load = () =>
     api
       .listSources()
-      .then(setSources)
+      .then((list) => {
+        setSources(list);
+        const map: Record<number, number> = {};
+        list.forEach((s) => {
+          map[s.id] = s.scrape_interval_minutes;
+        });
+        setIntervals(map);
+      })
       .catch((e) => setError(String(e.message || e)));
 
   useEffect(() => {
@@ -47,6 +57,9 @@ export default function SourcesPage() {
         `Scrape ok: ${r.jobs_found} found, ${r.jobs_created} new, ${r.jobs_updated} updated, ${r.jobs_archived} archived.`
       );
       load();
+      if (historyId === id) {
+        setRuns(await api.listSourceRuns(id));
+      }
     } catch (err) {
       setError(String((err as Error).message || err));
       load();
@@ -71,19 +84,48 @@ export default function SourcesPage() {
   };
 
   const toggle = async (s: Source) => {
-    await api.updateSource(s.id, { enabled: !s.enabled });
-    load();
+    try {
+      await api.updateSource(s.id, { enabled: !s.enabled });
+      load();
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    }
   };
 
-  const updateInterval = async (s: Source, minutes: number) => {
-    await api.updateSource(s.id, { scrape_interval_minutes: minutes });
-    load();
+  const saveInterval = async (s: Source) => {
+    const minutes = intervals[s.id] ?? s.scrape_interval_minutes;
+    if (minutes === s.scrape_interval_minutes) return;
+    try {
+      await api.updateSource(s.id, { scrape_interval_minutes: minutes });
+      setMessage(`Updated interval for ${s.name}.`);
+      load();
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    }
+  };
+
+  const showHistory = async (id: number) => {
+    if (historyId === id) {
+      setHistoryId(null);
+      setRuns([]);
+      return;
+    }
+    try {
+      setRuns(await api.listSourceRuns(id));
+      setHistoryId(id);
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    }
   };
 
   const remove = async (id: number) => {
     if (!confirm("Delete this source and its jobs?")) return;
-    await api.deleteSource(id);
-    load();
+    try {
+      await api.deleteSource(id);
+      load();
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    }
   };
 
   return (
@@ -172,57 +214,117 @@ export default function SourcesPage() {
               </thead>
               <tbody>
                 {sources.map((s) => (
-                  <tr key={s.id}>
-                    <td>
-                      <strong>{s.name}</strong>
-                      <div className="muted" style={{ fontSize: "0.8rem", wordBreak: "break-all" }}>
-                        {s.base_url}
-                      </div>
-                      {s.last_error && (
-                        <div className="badge danger" style={{ marginTop: 4 }}>
-                          {s.last_error.slice(0, 80)}
+                  <Fragment key={s.id}>
+                    <tr>
+                      <td>
+                        <strong>{s.name}</strong>
+                        <div className="muted" style={{ fontSize: "0.8rem", wordBreak: "break-all" }}>
+                          {s.base_url}
                         </div>
-                      )}
-                    </td>
-                    <td>
-                      <span className="badge info">{s.kind}</span>
-                    </td>
-                    <td>
-                      <span className={`badge ${s.enabled ? "" : "warn"}`}>
-                        {s.enabled ? "enabled" : "disabled"}
-                      </span>{" "}
-                      <span className={`badge ${s.last_run_status === "failed" ? "danger" : ""}`}>
-                        {s.last_run_status}
-                      </span>
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        min={0}
-                        style={{ width: 90 }}
-                        value={s.scrape_interval_minutes}
-                        onChange={(e) => updateInterval(s, Number(e.target.value))}
-                      />
-                    </td>
-                    <td className="muted">
-                      {s.last_scraped_at
-                        ? new Date(s.last_scraped_at).toLocaleString()
-                        : "—"}
-                    </td>
-                    <td>
-                      <div className="row">
-                        <button className="secondary" disabled={busy || !s.enabled} onClick={() => scrape(s.id)}>
-                          Scrape
-                        </button>
-                        <button className="secondary" onClick={() => toggle(s)}>
-                          {s.enabled ? "Disable" : "Enable"}
-                        </button>
-                        <button className="danger" onClick={() => remove(s.id)}>
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                        {s.last_error && (
+                          <div className="badge danger" style={{ marginTop: 4 }} title={s.last_error}>
+                            {s.last_error.slice(0, 120)}
+                            {s.last_error.length > 120 ? "…" : ""}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <span className="badge info">{s.kind}</span>
+                      </td>
+                      <td>
+                        <span className={`badge ${s.enabled ? "" : "warn"}`}>
+                          {s.enabled ? "enabled" : "disabled"}
+                        </span>{" "}
+                        <span className={`badge ${s.last_run_status === "failed" ? "danger" : ""}`}>
+                          {s.last_run_status}
+                        </span>
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min={0}
+                          style={{ width: 90 }}
+                          value={intervals[s.id] ?? s.scrape_interval_minutes}
+                          onChange={(e) =>
+                            setIntervals((prev) => ({
+                              ...prev,
+                              [s.id]: Number(e.target.value),
+                            }))
+                          }
+                          onBlur={() => saveInterval(s)}
+                        />
+                      </td>
+                      <td className="muted">
+                        {s.last_scraped_at
+                          ? new Date(s.last_scraped_at).toLocaleString()
+                          : "—"}
+                      </td>
+                      <td>
+                        <div className="row">
+                          <button
+                            className="secondary"
+                            disabled={busy || !s.enabled}
+                            onClick={() => scrape(s.id)}
+                          >
+                            Scrape
+                          </button>
+                          <button className="secondary" onClick={() => showHistory(s.id)}>
+                            {historyId === s.id ? "Hide runs" : "History"}
+                          </button>
+                          <button className="secondary" onClick={() => toggle(s)}>
+                            {s.enabled ? "Disable" : "Enable"}
+                          </button>
+                          <button className="danger" onClick={() => remove(s.id)}>
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {historyId === s.id && (
+                      <tr>
+                        <td colSpan={6}>
+                          {runs.length === 0 ? (
+                            <p className="muted">No runs recorded yet.</p>
+                          ) : (
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>When</th>
+                                  <th>Status</th>
+                                  <th>Found</th>
+                                  <th>Created</th>
+                                  <th>Updated</th>
+                                  <th>Archived</th>
+                                  <th>ms</th>
+                                  <th>Error</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {runs.map((r) => (
+                                  <tr key={r.id}>
+                                    <td>{new Date(r.started_at).toLocaleString()}</td>
+                                    <td>
+                                      <span
+                                        className={`badge ${r.status === "failed" ? "danger" : ""}`}
+                                      >
+                                        {r.status}
+                                      </span>
+                                    </td>
+                                    <td>{r.jobs_found}</td>
+                                    <td>{r.jobs_created}</td>
+                                    <td>{r.jobs_updated}</td>
+                                    <td>{r.jobs_archived}</td>
+                                    <td>{Math.round(r.duration_ms)}</td>
+                                    <td className="muted">{r.error_message || "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

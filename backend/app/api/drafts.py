@@ -21,7 +21,16 @@ from app.schemas import (
 router = APIRouter(prefix="/drafts", tags=["drafts"])
 
 
-def _generate_for_job(db: Session, job: Job, templates: list[Template]) -> list[Draft]:
+PROTECTED_STATUSES = {"reviewed", "approved", "exported"}
+
+
+def _generate_for_job(
+    db: Session,
+    job: Job,
+    templates: list[Template],
+    *,
+    overwrite_reviewed: bool = False,
+) -> list[Draft]:
     results: list[Draft] = []
     for template in templates:
         content = render_template(template, job)
@@ -31,6 +40,9 @@ def _generate_for_job(db: Session, job: Job, templates: list[Template]) -> list[
             .first()
         )
         if existing:
+            if existing.status in PROTECTED_STATUSES and not overwrite_reviewed:
+                results.append(existing)
+                continue
             if existing.content != content:
                 db.add(
                     Revision(
@@ -85,7 +97,9 @@ def generate_drafts(payload: GenerateDraftsRequest, db: Session = Depends(get_db
     if not templates:
         raise HTTPException(status_code=400, detail="No valid templates selected")
 
-    results = _generate_for_job(db, job, templates)
+    results = _generate_for_job(
+        db, job, templates, overwrite_reviewed=payload.overwrite_reviewed
+    )
     db.commit()
     for draft in results:
         db.refresh(draft)
@@ -104,7 +118,11 @@ def generate_bulk(payload: BulkGenerateRequest, db: Session = Depends(get_db)):
 
     all_drafts: list[Draft] = []
     for job in jobs:
-        all_drafts.extend(_generate_for_job(db, job, templates))
+        all_drafts.extend(
+            _generate_for_job(
+                db, job, templates, overwrite_reviewed=payload.overwrite_reviewed
+            )
+        )
 
     db.commit()
     for draft in all_drafts:

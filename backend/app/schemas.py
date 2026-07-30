@@ -69,6 +69,7 @@ class JobUpdate(BaseModel):
     apply_url: str | None = None
     needs_manual_fill: bool | None = None
     status: str | None = None
+    content_changed: bool | None = None
 
 
 class JobRead(JobBase):
@@ -148,11 +149,13 @@ class DraftUpdate(BaseModel):
 class GenerateDraftsRequest(BaseModel):
     job_id: int
     template_ids: list[int]
+    overwrite_reviewed: bool = False
 
 
 class BulkGenerateRequest(BaseModel):
     job_ids: list[int] = Field(min_length=1)
     template_ids: list[int] = Field(min_length=1)
+    overwrite_reviewed: bool = False
 
 
 class BulkGenerateResponse(BaseModel):
@@ -197,6 +200,7 @@ class ScrapeRunRead(BaseModel):
 
     id: int
     source_id: int
+    source_name: str | None = None
     status: str
     jobs_found: int
     jobs_created: int
@@ -206,6 +210,16 @@ class ScrapeRunRead(BaseModel):
     duration_ms: float
     started_at: datetime
     finished_at: datetime | None
+
+
+class DraftQueueItem(BaseModel):
+    id: int
+    job_id: int
+    channel: str
+    status: str
+    job_title: str = ""
+    company: str = ""
+    updated_at: datetime
 
 
 class RevisionRead(BaseModel):
@@ -264,13 +278,6 @@ class SettingsRead(BaseModel):
     archive_missing_jobs: bool = True
 
 
-class SettingsUpdate(BaseModel):
-    ollama_base_url: str | None = None
-    openai_api_key: str | None = None
-    anthropic_api_key: str | None = None
-    gemini_api_key: str | None = None
-
-
 class DashboardStats(BaseModel):
     sources_total: int
     sources_enabled: int
@@ -280,8 +287,10 @@ class DashboardStats(BaseModel):
     jobs_changed: int
     drafts_total: int
     drafts_reviewed: int
+    drafts_pending: int = 0
     scrape_runs_24h: int
     scrape_failures_24h: int
     templates_total: int
     recent_jobs: list[JobRead]
     recent_runs: list[ScrapeRunRead]
+    pending_drafts: list[DraftQueueItem] = Field(default_factory=list)

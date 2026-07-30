@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, Draft, Job, Revision, Template } from "../api";
+
+const PROTECTED = new Set(["reviewed", "approved", "exported"]);
 
 export default function GeneratePage() {
   const [params] = useSearchParams();
@@ -23,23 +25,37 @@ export default function GeneratePage() {
       api.listJobs({ page_size: 200, status: "active" }),
       api.listTemplates(),
     ])
-      .then(([j, t]) => {
-        setJobs(j.items);
+      .then(async ([j, t]) => {
+        let items = j.items;
         setTemplates(t);
         const jobParam = params.get("job");
         const jobsParam = params.get("jobs");
+        let focusId: number | "" = "";
+
         if (jobsParam) {
           const ids = jobsParam
             .split(",")
             .map(Number)
             .filter((n) => !Number.isNaN(n));
           setBulkIds(ids);
-          if (ids[0]) setJobId(ids[0]);
+          focusId = ids[0] || "";
         } else if (jobParam) {
-          setJobId(Number(jobParam));
-        } else if (j.items.length) {
-          setJobId(j.items[0].id);
+          focusId = Number(jobParam);
+        } else if (items.length) {
+          focusId = items[0].id;
         }
+
+        if (typeof focusId === "number" && !items.some((x) => x.id === focusId)) {
+          try {
+            const missing = await api.getJob(focusId);
+            items = [missing, ...items];
+          } catch {
+            /* job may be archived or deleted */
+          }
+        }
+
+        setJobs(items);
+        if (focusId !== "") setJobId(focusId);
         setSelectedTemplates(t.filter((x) => x.is_default).map((x) => x.id));
       })
       .catch((e) => setError(String(e.message || e)));
@@ -51,8 +67,7 @@ export default function GeneratePage() {
         .listDrafts(jobId)
         .then((d) => {
           setDrafts(d);
-          if (d.length) setActiveDraft(d[0]);
-          else setActiveDraft(null);
+          setActiveDraft(d[0] || null);
         })
         .catch((e) => setError(String(e.message || e)));
     }
@@ -72,17 +87,29 @@ export default function GeneratePage() {
   );
 
   const generate = async () => {
+    const hasProtected = drafts.some((d) => PROTECTED.has(d.status));
+    let overwrite = false;
+    if (hasProtected) {
+      const ok = confirm(
+        "Some drafts are reviewed/approved/exported. Overwrite them with fresh template renders?"
+      );
+      if (!ok) return;
+      overwrite = true;
+    }
+
     setBusy(true);
     setError("");
     try {
       if (bulkIds.length > 1) {
-        const res = await api.generateBulk(bulkIds, selectedTemplates);
+        const res = await api.generateBulk(bulkIds, selectedTemplates, overwrite);
         setMessage(`Generated ${res.drafts.length} drafts across ${res.jobs_processed} jobs.`);
         if (typeof jobId === "number") {
-          setDrafts(await api.listDrafts(jobId));
+          const d = await api.listDrafts(jobId);
+          setDrafts(d);
+          setActiveDraft(d[0] || null);
         }
       } else if (typeof jobId === "number" && selectedTemplates.length) {
-        const result = await api.generateDrafts(jobId, selectedTemplates);
+        const result = await api.generateDrafts(jobId, selectedTemplates, overwrite);
         setDrafts(result);
         setActiveDraft(result[0] || null);
         setMessage(`Generated ${result.length} draft(s).`);
@@ -120,31 +147,55 @@ export default function GeneratePage() {
 
   const saveDraft = async () => {
     if (!activeDraft) return;
-    const updated = await api.updateDraft(activeDraft.id, {
-      content: activeDraft.content,
-      status: activeDraft.status,
-    });
-    setActiveDraft(updated);
-    setMessage("Draft saved.");
-    setRevisions(await api.listRevisions(updated.id));
+    try {
+      const updated = await api.updateDraft(activeDraft.id, {
+        content: activeDraft.content,
+        status: activeDraft.status,
+      });
+      setActiveDraft(updated);
+      setDrafts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      setMessage("Draft saved.");
+      setRevisions(await api.listRevisions(updated.id));
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
   };
 
   const exportDraft = async (format: "text" | "markdown") => {
     if (!activeDraft) return;
-    const data = await api.exportDraft(activeDraft.id, format);
-    const body = format === "markdown" ? data.markdown || data.content : data.content;
-    await navigator.clipboard.writeText(body || "");
-    const blob = new Blob([body || ""], {
-      type: format === "markdown" ? "text/markdown" : "text/plain",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${data.job_title}-${data.channel}.${format === "markdown" ? "md" : "txt"}`;
-    a.click();
-    URL.revokeObjectURL(url);
-    await api.updateDraft(activeDraft.id, { status: "exported" });
-    setMessage(`Exported as ${format}.`);
+    try {
+      const data = await api.exportDraft(activeDraft.id, format);
+      const body = format === "markdown" ? data.markdown || data.content : data.content;
+      await navigator.clipboard.writeText(body || "");
+      const blob = new Blob([body || ""], {
+        type: format === "markdown" ? "text/markdown" : "text/plain",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${data.job_title}-${data.channel}.${format === "markdown" ? "md" : "txt"}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      const updated = await api.updateDraft(activeDraft.id, { status: "exported" });
+      setActiveDraft(updated);
+      setDrafts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      setMessage(`Exported as ${format}.`);
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
+  };
+
+  const restoreRevision = async (r: Revision) => {
+    if (!activeDraft) return;
+    try {
+      const updated = await api.updateDraft(activeDraft.id, { content: r.after });
+      setActiveDraft(updated);
+      setDrafts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      setRevisions(await api.listRevisions(updated.id));
+      setMessage("Revision restored and saved.");
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
   };
 
   const toggleTemplate = (id: number) => {
@@ -178,10 +229,7 @@ export default function GeneratePage() {
           )}
           <div className="field">
             <label>Focus job</label>
-            <select
-              value={jobId}
-              onChange={(e) => setJobId(Number(e.target.value))}
-            >
+            <select value={jobId} onChange={(e) => setJobId(Number(e.target.value))}>
               {jobs.map((j) => (
                 <option key={j.id} value={j.id}>
                   {j.title} — {j.company}
@@ -191,7 +239,12 @@ export default function GeneratePage() {
           </div>
           {selectedJob?.needs_manual_fill && (
             <p className="badge warn" style={{ marginTop: 8 }}>
-              This job needs manual fill — review fields before publishing copy.
+              Needs manual fill — review fields before publishing copy.
+            </p>
+          )}
+          {selectedJob?.content_changed && (
+            <p className="badge info" style={{ marginTop: 8 }}>
+              Job content changed since last scrape.
             </p>
           )}
           <div className="checkbox-list" style={{ marginTop: "1rem" }}>
@@ -228,12 +281,49 @@ export default function GeneratePage() {
         </div>
       </div>
 
+      {selectedJob && (
+        <div className="card">
+          <h3>Job context</h3>
+          <p style={{ margin: "0 0 0.5rem" }}>
+            <strong>{selectedJob.title}</strong> · {selectedJob.company} · {selectedJob.location}
+          </p>
+          <div className="row muted" style={{ marginBottom: "0.5rem" }}>
+            {selectedJob.employment_type && <span>{selectedJob.employment_type}</span>}
+            {selectedJob.salary_text && <span>{selectedJob.salary_text}</span>}
+            {selectedJob.apply_url && (
+              <a href={selectedJob.apply_url} target="_blank" rel="noreferrer">
+                Open apply link
+              </a>
+            )}
+            <Link to={`/jobs?q=${encodeURIComponent(selectedJob.title)}`}>Edit on Jobs</Link>
+          </div>
+          {selectedJob.skills?.length > 0 && (
+            <p className="muted" style={{ margin: "0 0 0.5rem" }}>
+              Skills: {selectedJob.skills.join(", ")}
+            </p>
+          )}
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              maxHeight: 160,
+              overflow: "auto",
+              background: "#f8faf9",
+              padding: "0.75rem",
+              borderRadius: 8,
+              margin: 0,
+              fontSize: "0.85rem",
+            }}
+          >
+            {(selectedJob.description_text || "No description.").slice(0, 1200)}
+            {(selectedJob.description_text || "").length > 1200 ? "…" : ""}
+          </pre>
+        </div>
+      )}
+
       {activeDraft && (
         <div className="card">
           <div className="page-header" style={{ marginBottom: "0.75rem" }}>
-            <h3 style={{ margin: 0 }}>
-              Editor · {activeDraft.channel}
-            </h3>
+            <h3 style={{ margin: 0 }}>Editor · {activeDraft.channel}</h3>
             <div className="row">
               <select
                 style={{ width: "auto" }}
@@ -300,11 +390,9 @@ export default function GeneratePage() {
                   <button
                     className="secondary"
                     style={{ marginTop: 6 }}
-                    onClick={() =>
-                      setActiveDraft({ ...activeDraft, content: r.after })
-                    }
+                    onClick={() => restoreRevision(r)}
                   >
-                    Restore this version
+                    Restore & save
                   </button>
                 </div>
               ))}

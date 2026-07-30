@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, Job, Source } from "../api";
 
@@ -9,14 +9,17 @@ export default function JobsPage() {
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
   const [editing, setEditing] = useState<Job | null>(null);
+  const [searchInput, setSearchInput] = useState(params.get("q") || "");
 
   const page = Number(params.get("page") || 1);
   const q = params.get("q") || "";
   const status = params.get("status") || "active";
   const sourceId = params.get("source_id") || "";
   const needsFill = params.get("needs_manual_fill") || "";
+  const changed = params.get("content_changed") || "";
 
   const load = () => {
     api
@@ -27,6 +30,7 @@ export default function JobsPage() {
         status,
         source_id: sourceId ? Number(sourceId) : undefined,
         needs_manual_fill: needsFill === "" ? undefined : needsFill === "true",
+        content_changed: changed === "" ? undefined : changed === "true",
       })
       .then((res) => {
         setJobs(res.items);
@@ -42,7 +46,19 @@ export default function JobsPage() {
 
   useEffect(() => {
     load();
-  }, [page, q, status, sourceId, needsFill]);
+  }, [page, q, status, sourceId, needsFill, changed]);
+
+  useEffect(() => {
+    setSearchInput(q);
+  }, [q]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      if (searchInput === q) return;
+      setFilter("q", searchInput);
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [searchInput]);
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -52,28 +68,60 @@ export default function JobsPage() {
     setParams(next);
   };
 
+  const pageIds = useMemo(() => jobs.map((j) => j.id), [jobs]);
+  const allPageSelected =
+    pageIds.length > 0 && pageIds.every((id) => selected.includes(id));
+
   const toggleSelect = (id: number) => {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
+  const toggleSelectAllPage = () => {
+    if (allPageSelected) {
+      setSelected((prev) => prev.filter((id) => !pageIds.includes(id)));
+    } else {
+      setSelected((prev) => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
   const archive = async (job: Job) => {
-    await api.updateJob(job.id, { status: "archived" });
-    load();
+    try {
+      await api.updateJob(job.id, { status: "archived" });
+      load();
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
+  };
+
+  const dismissChanged = async (job: Job) => {
+    try {
+      await api.updateJob(job.id, { content_changed: false });
+      setMessage(`Cleared “changed” flag for ${job.title || "job"}.`);
+      load();
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
   };
 
   const saveEdit = async () => {
     if (!editing) return;
-    await api.updateJob(editing.id, {
-      title: editing.title,
-      company: editing.company,
-      location: editing.location,
-      description_text: editing.description_text,
-      apply_url: editing.apply_url,
-      needs_manual_fill: editing.needs_manual_fill,
-      skills: editing.skills,
-    });
-    setEditing(null);
-    load();
+    try {
+      await api.updateJob(editing.id, {
+        title: editing.title,
+        company: editing.company,
+        location: editing.location,
+        description_text: editing.description_text,
+        apply_url: editing.apply_url,
+        needs_manual_fill: editing.needs_manual_fill,
+        skills: editing.skills,
+        content_changed: editing.content_changed,
+      });
+      setEditing(null);
+      setMessage("Job saved.");
+      load();
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
   };
 
   return (
@@ -83,6 +131,7 @@ export default function JobsPage() {
           <h2>Jobs</h2>
           <p>
             {total} matching · search, filter, archive stale roles, jump to generate.
+            {selected.length > 0 ? ` · ${selected.length} selected` : ""}
           </p>
         </div>
         {selected.length > 0 && (
@@ -93,14 +142,15 @@ export default function JobsPage() {
       </div>
 
       {error && <div className="error">{error}</div>}
+      {message && <div className="success">{message}</div>}
 
       <div className="filters card" style={{ marginBottom: "1rem" }}>
         <div className="field">
           <label>Search</label>
           <input
-            value={q}
+            value={searchInput}
             placeholder="Title, company, location"
-            onChange={(e) => setFilter("q", e.target.value)}
+            onChange={(e) => setSearchInput(e.target.value)}
           />
         </div>
         <div className="field">
@@ -131,6 +181,14 @@ export default function JobsPage() {
             <option value="false">Complete</option>
           </select>
         </div>
+        <div className="field">
+          <label>Content</label>
+          <select value={changed} onChange={(e) => setFilter("content_changed", e.target.value)}>
+            <option value="">Any</option>
+            <option value="true">Changed</option>
+            <option value="false">Unchanged</option>
+          </select>
+        </div>
       </div>
 
       <div className="card">
@@ -141,7 +199,14 @@ export default function JobsPage() {
             <table>
               <thead>
                 <tr>
-                  <th></th>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={toggleSelectAllPage}
+                      title="Select all on this page"
+                    />
+                  </th>
                   <th>Role</th>
                   <th>Company</th>
                   <th>Location</th>
@@ -174,6 +239,11 @@ export default function JobsPage() {
                         <button className="secondary" onClick={() => setEditing(j)}>
                           Edit
                         </button>
+                        {j.content_changed && (
+                          <button className="secondary" onClick={() => dismissChanged(j)}>
+                            Clear changed
+                          </button>
+                        )}
                         {j.status === "active" && (
                           <button className="secondary" onClick={() => archive(j)}>
                             Archive
@@ -241,6 +311,21 @@ export default function JobsPage() {
                 onChange={(e) => setEditing({ ...editing, apply_url: e.target.value })}
               />
             </div>
+            <div className="field">
+              <label>Skills (comma-separated)</label>
+              <input
+                value={(editing.skills || []).join(", ")}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    skills: e.target.value
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  })
+                }
+              />
+            </div>
           </div>
           <div className="field" style={{ marginTop: "0.75rem" }}>
             <label>Description</label>
@@ -259,6 +344,16 @@ export default function JobsPage() {
                 }
               />
               Needs manual fill
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={editing.content_changed}
+                onChange={(e) =>
+                  setEditing({ ...editing, content_changed: e.target.checked })
+                }
+              />
+              Content changed
             </label>
             <button onClick={saveEdit}>Save</button>
             <button className="secondary" onClick={() => setEditing(null)}>

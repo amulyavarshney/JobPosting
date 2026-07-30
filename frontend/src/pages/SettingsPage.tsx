@@ -154,15 +154,14 @@ export default function SettingsPage() {
       </div>
 
       <div className="card">
-        <h3>Optional LLM providers</h3>
+        <h3>Runtime</h3>
         <p className="muted">
-          Not required. v1 polishes via subscriptions (Claude / ChatGPT / Gemini). Cloud
-          API keys remain optional for a future in-app revise path.
+          AI polish uses your subscriptions (Claude / ChatGPT / Gemini) via Copy prompt → Import.
+          Optional cloud API keys can be set in server <code>.env</code> for future use.
         </p>
         <ul className="muted">
-          <li>OpenAI configured: {settings.openai_api_key_configured ? "yes" : "no"}</li>
-          <li>Anthropic configured: {settings.anthropic_api_key_configured ? "yes" : "no"}</li>
-          <li>Gemini configured: {settings.gemini_api_key_configured ? "yes" : "no"}</li>
+          <li>Environment: {settings.environment}</li>
+          <li>Scheduler: {settings.scheduler_enabled ? "on" : "off"}</li>
           <li>Ollama: {settings.ollama_base_url || "not set"}</li>
         </ul>
       </div>

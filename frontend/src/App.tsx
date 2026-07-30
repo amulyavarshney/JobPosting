@@ -1,10 +1,45 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Route, Routes } from "react-router-dom";
+import { api, isDemoMode } from "./api";
 import DashboardPage from "./pages/DashboardPage";
 import SourcesPage from "./pages/SourcesPage";
 import JobsPage from "./pages/JobsPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import GeneratePage from "./pages/GeneratePage";
 import SettingsPage from "./pages/SettingsPage";
+
+function Banners() {
+  const [needKey, setNeedKey] = useState(false);
+  const demo = isDemoMode();
+
+  useEffect(() => {
+    if (demo) return;
+    api
+      .getSettings()
+      .then((s) => {
+        const hasKey = Boolean(localStorage.getItem("jobposting_api_key"));
+        setNeedKey(Boolean(s.api_key_required && !hasKey));
+      })
+      .catch(() => undefined);
+  }, [demo]);
+
+  return (
+    <>
+      {demo && (
+        <div className="success" style={{ margin: "0 0 1rem" }}>
+          Browser demo mode — data stays in this browser (localStorage). Run the API locally for
+          live scraping.
+        </div>
+      )}
+      {needKey && (
+        <div className="error" style={{ margin: "0 0 1rem" }}>
+          API key required for write operations.{" "}
+          <Link to="/settings">Add it in Settings</Link> to scrape, generate, and save.
+        </div>
+      )}
+    </>
+  );
+}
 
 export default function App() {
   return (
@@ -24,6 +59,7 @@ export default function App() {
         </nav>
       </aside>
       <main className="content">
+        <Banners />
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/sources" element={<SourcesPage />} />

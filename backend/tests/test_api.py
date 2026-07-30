@@ -147,3 +147,46 @@ def test_bulk_generate(client):
     assert res.status_code == 200
     assert res.json()["jobs_processed"] == 2
     assert len(res.json()["drafts"]) == 4
+
+
+def test_generate_skips_reviewed_unless_overwrite(client):
+    job = client.post(
+        "/api/jobs",
+        json={"title": "Engineer", "company": "Co", "location": "Remote"},
+    ).json()
+    templates = client.get("/api/templates").json()
+    tpl = next(t for t in templates if t["channel"] == "linkedin")
+    draft = client.post(
+        "/api/drafts/generate",
+        json={"job_id": job["id"], "template_ids": [tpl["id"]]},
+    ).json()[0]
+    polished = "POLISHED COPY"
+    client.patch(f"/api/drafts/{draft['id']}", json={"content": polished, "status": "reviewed"})
+
+    skipped = client.post(
+        "/api/drafts/generate",
+        json={"job_id": job["id"], "template_ids": [tpl["id"]], "overwrite_reviewed": False},
+    ).json()[0]
+    assert skipped["content"] == polished
+    assert skipped["status"] == "reviewed"
+
+    overwritten = client.post(
+        "/api/drafts/generate",
+        json={"job_id": job["id"], "template_ids": [tpl["id"]], "overwrite_reviewed": True},
+    ).json()[0]
+    assert overwritten["content"] != polished
+    assert overwritten["status"] == "draft"
+    assert "Engineer" in overwritten["content"]
+
+
+def test_dismiss_content_changed(client):
+    job = client.post(
+        "/api/jobs",
+        json={"title": "X", "company": "Y", "content_changed": False},
+    ).json()
+    # content_changed is not on create payload fields that stick via JobCreate - set via update path
+    # simulate scrape flag by direct update
+    updated = client.patch(f"/api/jobs/{job['id']}", json={"content_changed": True}).json()
+    assert updated["content_changed"] is True
+    cleared = client.patch(f"/api/jobs/{job['id']}", json={"content_changed": False}).json()
+    assert cleared["content_changed"] is False
