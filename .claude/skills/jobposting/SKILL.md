@@ -37,3 +37,5 @@ Or `POST /api/drafts/{id}/import` with polished text.
 - Fix incomplete jobs via `PATCH /api/jobs/{id}` when `needs_manual_fill` is true
 
 See `skills/openapi-actions.yaml` for OpenAPI schema.
+
+Cursor users: equivalent skill with shell helpers at `.cursor/skills/jobposting/scripts/`.

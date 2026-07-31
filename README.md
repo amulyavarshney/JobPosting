@@ -78,8 +78,15 @@ Public URL path matches the repo name: `/JobPosting/`.
 4. **Import result** into the draft
 5. Export and post manually
 
-Instruction packs: `skills/chatgpt/`, `skills/gemini/`, `skills/openapi-actions.yaml`  
-Claude skill: `.claude/skills/jobposting/`
+Agent skills & instruction packs:
+
+| Tool | Path |
+|------|------|
+| Cursor | `.cursor/skills/jobposting/` (+ curl helpers in `scripts/`) |
+| Claude Code | `.claude/skills/jobposting/` |
+| ChatGPT Custom GPT | `skills/chatgpt/jobposting.custom-gpt.md` |
+| Gemini Gem | `skills/gemini/jobposting-instructions.md` |
+| OpenAPI (Actions) | `skills/openapi-actions.yaml` |
 
 ## Configuration
 
